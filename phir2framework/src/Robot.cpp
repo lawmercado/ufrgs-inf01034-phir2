@@ -140,7 +140,7 @@ void Robot::wanderAvoidingCollisions()
     float minFrontLaser = base.getMinLaserValueInRange(75,105);
     float minRightLaser = base.getMinLaserValueInRange(106,180);
 
-    float linVel = 2.0;
+    float linVel = 1.0;
     float angVel = 0.0;
 
     base.setWheelsVelocity_fromLinAngVelocity(linVel, angVel);
@@ -188,7 +188,17 @@ void Robot::keepAsFarthestAsPossibleFromWalls()
     float minLeftLaser  = base.getMinLaserValueInRange(0,74);
     float minRightLaser = base.getMinLaserValueInRange(106,180);
 
-    double Tp = 2, Td = 20, Ti = 0.0005;
+    double Tp = 2.5, Td = 20, Ti = 0.0005;
+
+    // Limits tha range for both lasers so that the perturbation when meeting long "empty"
+    // spaces does not affect so much the resulting angular velocity
+    if ( minLeftLaser > 2.1 ) {
+        minLeftLaser = 2.1;
+    }
+
+    if ( minRightLaser > 2.1 ) {
+        minRightLaser = 2.1;
+    }
 
     PID_CTE_ = minLeftLaser - minRightLaser;
     PID_CTESum_ += PID_CTE_;
