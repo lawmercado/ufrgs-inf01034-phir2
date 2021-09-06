@@ -136,32 +136,33 @@ void Robot::move(MovingDirection dir)
 
 void Robot::wanderAvoidingCollisions()
 {
-    float minLeftLaser  = base.getMinLaserValueInRange(0,74);
-    float minFrontLaser = base.getMinLaserValueInRange(75,105);
-    float minRightLaser = base.getMinLaserValueInRange(106,180);
+    float laserLeft  = base.getMinLaserValueInRange(0,74);
+    float laserFront = base.getMinLaserValueInRange(75,105);
+    float laserRight = base.getMinLaserValueInRange(106,180);
 
     float linVel = 1.0;
     float angVel = 0.0;
 
-    base.setWheelsVelocity_fromLinAngVelocity(linVel, angVel);
+    // Ditance to be considered as blocked
+    float laserThresholdWallDistance = 1.2;
 
-    float limitWallDistance = 1.2;
+    base.setWheelsVelocity_fromLinAngVelocity(linVel, angVel);
 
     bool isUnblocked, isLeftFrontBlocked, isRightFrontBlocked, isLeftBlocked, isRightBlocked;
 
-    isLeftBlocked = (minLeftLaser <= limitWallDistance);
+    isLeftBlocked = (laserLeft <= laserThresholdWallDistance);
 
-    isRightBlocked = (minRightLaser <= limitWallDistance);
+    isRightBlocked = (laserRight <= laserThresholdWallDistance);
 
-    isLeftFrontBlocked = isLeftBlocked && (minFrontLaser <= limitWallDistance);
+    isLeftFrontBlocked = isLeftBlocked && (laserFront <= laserThresholdWallDistance);
 
-    isRightFrontBlocked = isRightBlocked && (minFrontLaser <= limitWallDistance);
+    isRightFrontBlocked = isRightBlocked && (laserFront <= laserThresholdWallDistance);
 
-    isUnblocked = (minFrontLaser > limitWallDistance);
+    isUnblocked = (laserFront > laserThresholdWallDistance);
 
-    std::cout << "LOG:minFrontLaser: " << minFrontLaser << std::endl;
-    std::cout << "LOG:minLeftLaser: " << minLeftLaser << std::endl;
-    std::cout << "LOG:minRightLaser: " << minRightLaser << std::endl;
+    std::cout << "LOG:laserLeft: " << laserLeft << std::endl;
+    std::cout << "LOG:laserFront: " << laserFront << std::endl;
+    std::cout << "LOG:laserRight: " << laserRight << std::endl;
 
     if( isUnblocked )
     {
@@ -170,7 +171,7 @@ void Robot::wanderAvoidingCollisions()
     }
     else if( isRightFrontBlocked || isRightBlocked )
     {
-        std::cout << "Right/Right front blocked. Turning left." << std::endl;
+        std::cout << "Right/Right-front blocked. Turning left." << std::endl;
         base.setMovementSimple(LEFT);
     }
     else if( isLeftFrontBlocked || isLeftBlocked )
@@ -187,40 +188,43 @@ void Robot::keepAsFarthestAsPossibleFromWalls()
 
     float laserThresholdAngleDeg = 60;
     float laserThresholdReach = 1.75;
+    
+    // Hyperparameters for the PID controller 
+    double Tp = 3, Td = 20, Ti = 0.0005;
+    
+    double p, i, d = 0.0;
 
     // Limits the range of the left and right laser
-    float minLeftLaser = base.getMinLaserValueInRange(0, laserThresholdAngleDeg - 1);
-    float minRightLaser = base.getMinLaserValueInRange(181 - laserThresholdAngleDeg, 180);
-
-    double Tp = 3, Td = 20, Ti = 0.0005;
+    float laserLeft = base.getMinLaserValueInRange(0, laserThresholdAngleDeg - 1);
+    float laserRight = base.getMinLaserValueInRange(181 - laserThresholdAngleDeg, 180);
 
     // Limits the range for both lasers so that the perturbation when meeting long "empty"
     // spaces does not affect so much the resulting angular velocity
-    if ( minLeftLaser > laserThresholdReach ) {
-        minLeftLaser = laserThresholdReach;
+    if ( laserLeft > laserThresholdReach ) {
+        laserLeft = laserThresholdReach;
     }
 
-    if ( minRightLaser > laserThresholdReach ) {
-        minRightLaser = laserThresholdReach;
+    if ( laserRight > laserThresholdReach ) {
+        laserRight = laserThresholdReach;
     }
 
-    PID_CTE_ = minLeftLaser - minRightLaser;
+    PID_CTE_ = laserLeft - laserRight;
     PID_CTESum_ += PID_CTE_;
 
     // Proportional term
-    double p = Tp * PID_CTE_;
-
-    // Derivative term
-    double d = Td * (PID_CTE_ - PID_PreviousCTE_);
+    p = Tp * PID_CTE_;
 
     // Integral term
-    double i = Ti * PID_CTESum_;
+    i = Ti * PID_CTESum_;
+
+    // Derivative term
+    d = Td * (PID_CTE_ - PID_PreviousCTE_);
 
     angVel = p + i + d;
 
     std::cout << "LOG:angVel: " << angVel << std::endl;
-    std::cout << "LOG:minLeftLaser: " << minLeftLaser << std::endl;
-    std::cout << "LOG:minRightLaser: " << minRightLaser << std::endl;
+    std::cout << "LOG:laserLeft: " << laserLeft << std::endl;
+    std::cout << "LOG:laserRight: " << laserRight << std::endl;
     std::cout << "LOG:PID_CTE_: " << PID_CTE_ << std::endl;
     std::cout << "LOG:PID_CTESum_: " << PID_CTESum_ << std::endl;
     std::cout << "LOG:PID_PreviousCTE_: " << PID_PreviousCTE_ << std::endl;
