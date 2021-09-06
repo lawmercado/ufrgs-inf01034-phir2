@@ -191,7 +191,7 @@ void Robot::keepAsFarthestAsPossibleFromWalls()
     
     // Hyperparameters for the PID controller 
     double Tp = 3, Td = 20, Ti = 0.0005;
-    
+
     double p, i, d = 0.0;
 
     // Limits the range of the left and right laser
@@ -200,11 +200,13 @@ void Robot::keepAsFarthestAsPossibleFromWalls()
 
     // Limits the range for both lasers so that the perturbation when meeting long "empty"
     // spaces does not affect so much the resulting angular velocity
-    if ( laserLeft > laserThresholdReach ) {
+    if ( laserLeft > laserThresholdReach )
+    {
         laserLeft = laserThresholdReach;
     }
 
-    if ( laserRight > laserThresholdReach ) {
+    if ( laserRight > laserThresholdReach )
+    {
         laserRight = laserThresholdReach;
     }
 
