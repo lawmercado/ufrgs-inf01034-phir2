@@ -185,19 +185,23 @@ void Robot::keepAsFarthestAsPossibleFromWalls()
     float linVel = 0.5;
     float angVel = 0.0;
 
-    float minLeftLaser  = base.getMinLaserValueInRange(0,74);
-    float minRightLaser = base.getMinLaserValueInRange(106,180);
+    float laserThresholdAngleDeg = 60;
+    float laserThresholdReach = 1.75;
 
-    double Tp = 2.5, Td = 20, Ti = 0.0005;
+    // Limits the range of the left and right laser
+    float minLeftLaser = base.getMinLaserValueInRange(0, laserThresholdAngleDeg - 1);
+    float minRightLaser = base.getMinLaserValueInRange(181 - laserThresholdAngleDeg, 180);
 
-    // Limits tha range for both lasers so that the perturbation when meeting long "empty"
+    double Tp = 3, Td = 20, Ti = 0.0005;
+
+    // Limits the range for both lasers so that the perturbation when meeting long "empty"
     // spaces does not affect so much the resulting angular velocity
-    if ( minLeftLaser > 2.1 ) {
-        minLeftLaser = 2.1;
+    if ( minLeftLaser > laserThresholdReach ) {
+        minLeftLaser = laserThresholdReach;
     }
 
-    if ( minRightLaser > 2.1 ) {
-        minRightLaser = 2.1;
+    if ( minRightLaser > laserThresholdReach ) {
+        minRightLaser = laserThresholdReach;
     }
 
     PID_CTE_ = minLeftLaser - minRightLaser;
