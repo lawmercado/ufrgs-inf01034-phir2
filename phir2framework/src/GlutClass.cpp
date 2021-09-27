@@ -148,7 +148,9 @@ void GlutClass::render()
     }
 
     // Draw grid
+    pthread_mutex_lock(grid_->mutex);
     grid_->draw(xi, yi, xf, yf);
+    pthread_mutex_unlock(grid_->mutex);
 
     // Draw robot path
     if(drawRobotPath){
@@ -164,10 +166,70 @@ void GlutClass::render()
         timer.startLap();
     }
 
+    writeViewModeName(xCenter,yCenter);
+
     glutSwapBuffers();
     glutPostRedisplay();
 
     usleep(5000);
+}
+
+void GlutClass::writeViewModeName(int xc, int yc)
+{
+    std::string str;
+    str="TESTE";
+
+    int x,y;
+    x = xc + x_aux + 0.5*halfWindowSize;
+
+    switch(instance->robot_->grid->viewMode)
+    {
+    case 0:
+        str="grid: LOG_ODDS";
+        break;
+    case 1:
+        str="grid: OCC SONAR";
+        break;
+    case 2:
+        str="grid: HIMM";
+        break;
+    case 3:
+        str="grid: TYPES";
+        break;
+    }
+
+    y = yc + y_aux - 0.8*halfWindowSize;
+    glColor3f(0.7, 0, 0.5);
+    glRasterPos2f(x, y);
+    for (int i = 0; i < str.size(); i++) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, str[i]);
+    }
+
+    switch(instance->robot_->viewMode)
+    {
+    case 0:
+        str="sensor: none";
+        break;
+    case 1:
+        str="sensor: sonar cone";
+        break;
+    case 2:
+        str="sensor: sonar axis";
+        break;
+    case 3:
+        str="sensor: laser area";
+        break;
+    case 4:
+        str="sensor: laser beam";
+        break;
+    }
+
+    y = yc + y_aux - 0.9*halfWindowSize;
+    glColor3f(0.5, 0, 0.9);
+    glRasterPos2f(x, y);
+    for (int i = 0; i < str.size(); i++) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, str[i]);
+    }
 }
 
 void GlutClass::screenshot()
@@ -260,6 +322,7 @@ void GlutClass::keyboard(unsigned char key, int x, int y)
             instance->robot_->motionMode_ = FARFROMWALLS;
             std::cout << "MotionMode: 4 - FAR FROM WALLS" << std::endl;
             break;
+
         case 'l': //Lock camera
             if(instance->lockCameraOnRobot == true){
                 instance->lockCameraOnRobot = false;
@@ -271,6 +334,12 @@ void GlutClass::keyboard(unsigned char key, int x, int y)
                 instance->x_aux = 0;
                 instance->y_aux = 0;
             }
+            break;
+        case 'f':
+            instance->grid_->showArrows=!instance->grid_->showArrows;
+            break;
+        case 'g':
+            instance->grid_->showValues=!instance->grid_->showValues;
             break;
         case 'r': //robot view mode
             instance->robot_->viewMode++;
@@ -286,9 +355,6 @@ void GlutClass::keyboard(unsigned char key, int x, int y)
             instance->grid_->viewMode--;
             if(instance->grid_->viewMode == -1)
                 instance->grid_->viewMode = instance->grid_->numViewModes-1;
-            break;
-        case 'g':
-            instance->grid_->showValues=!instance->grid_->showValues;
             break;
         case 'w':
             instance->y_aux -= 10;

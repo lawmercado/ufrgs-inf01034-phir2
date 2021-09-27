@@ -13,6 +13,7 @@ class GlutClass
         void process();
         void terminate();
 
+        void writeViewModeName(int x, int y);
         void screenshot();
 
         void setRobot(Robot* r);

@@ -32,21 +32,28 @@ public:
     // Sensors stuff
     bool readOdometryAndSensors();
     const Pose& getOdometry();
-    const std::vector<float>& getLaserReadings();
-    const std::vector<float>& getSonarReadings();
-    int getNumLasers();
-    int getNumSonars();
-    float getMaxLaserRange();
     void setOdometry(const Pose &o);
+
+    const std::vector<float>& getSonarReadings();
+    int getNumSonars();
+    float getMaxSonarRange();
     void setSonarReadings(const std::vector<float> &s);
-    void setLaserReadings(const std::vector<float> &l);
     float getMinSonarValueInRange(int idFirst, int idLast);
+    int getNearestSonarBeam(float angle);
+    float getAngleOfSonarBeam(int k);
+    float getKthSonarReading(int k);
+
+    const std::vector<float>& getLaserReadings();
+    int getNumLasers();
+    float getMaxLaserRange();
+    void setLaserReadings(const std::vector<float> &l);
     float getMinLaserValueInRange(int idFirst, int idLast, int kernelSize=0);
+    int getNearestLaserBeam(float angle);
+    float getAngleOfLaserBeam(int k);
+    float getKthLaserReading(int k);
 
     float getAngleOfMinLaserValueInRange(int idFirst, int idLast);
     float getAngleOfMaxLaserValueInRange(int idFirst, int idLast);
-
-
 
     // Log stuff
     void writeOnLog();
@@ -76,6 +83,7 @@ private:
     // Sensors stuff
     int numSonars_;
     std::vector<float> sonars_;
+    float maxSonarRange_;
     int numLasers_;
     std::vector<float> lasers_;
     float maxLaserRange_;

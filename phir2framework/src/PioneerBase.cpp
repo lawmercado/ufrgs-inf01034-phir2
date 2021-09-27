@@ -1,6 +1,7 @@
 #include "PioneerBase.h"
 
 #include <GL/glut.h>
+#include <limits.h>
 
 
 PioneerBase::PioneerBase()
@@ -14,6 +15,8 @@ PioneerBase::PioneerBase()
     numLasers_ = 181;
     lasers_.resize(numLasers_, 0.0);
     maxLaserRange_ = 6.5; // 5.0;
+    maxSonarRange_ = 5.0; // 5.0;
+
 
     // wheels' velocities
     vLeft_ = vRight_ = 0.0;
@@ -186,8 +189,8 @@ void PioneerBase::drawBase()
 
 void PioneerBase::drawSonars(bool drawCones)
 {
-    float angles[8] = {DEG2RAD(-90), DEG2RAD(-50), DEG2RAD(-30), DEG2RAD(-10),
-                       DEG2RAD(10), DEG2RAD(30), DEG2RAD(50), DEG2RAD(90)};
+    float angles[8] = {DEG2RAD(90), DEG2RAD(50), DEG2RAD(30), DEG2RAD(10),
+                       DEG2RAD(-10), DEG2RAD(-30), DEG2RAD(-50), DEG2RAD(-90)};
     std::vector<float> s = getSonarReadings();
 
     glRotatef(-90,0.0,0.0,1.0);
@@ -205,11 +208,11 @@ void PioneerBase::drawSonars(bool drawCones)
 
             glBegin( GL_POLYGON);
             {
-                glVertex2f(s[i]*sin(angles[i]-fov)*100, s[i]*cos(angles[i]-fov)*100);
-                glVertex2f(s[i]*sin(angles[i]-hfov)*100, s[i]*cos(angles[i]-hfov)*100);
-                glVertex2f(s[i]*sin(angles[i])*100, s[i]*cos(angles[i])*100);
-                glVertex2f(s[i]*sin(angles[i]+hfov)*100, s[i]*cos(angles[i]+hfov)*100);
-                glVertex2f(s[i]*sin(angles[i]+fov)*100, s[i]*cos(angles[i]+fov)*100);
+                glVertex2f(-s[i]*sin(angles[i]-fov)*100, s[i]*cos(angles[i]-fov)*100);
+                glVertex2f(-s[i]*sin(angles[i]-hfov)*100, s[i]*cos(angles[i]-hfov)*100);
+                glVertex2f(-s[i]*sin(angles[i])*100, s[i]*cos(angles[i])*100);
+                glVertex2f(-s[i]*sin(angles[i]+hfov)*100, s[i]*cos(angles[i]+hfov)*100);
+                glVertex2f(-s[i]*sin(angles[i]+fov)*100, s[i]*cos(angles[i]+fov)*100);
                 glVertex2f(0, 0);
             }
             glEnd();
@@ -224,7 +227,7 @@ void PioneerBase::drawSonars(bool drawCones)
 
             glBegin( GL_LINES);
             {
-                glVertex2f(s[i]*sin(angles[i])*100, s[i]*cos(angles[i])*100);
+                glVertex2f(-s[i]*sin(angles[i])*100, s[i]*cos(angles[i])*100);
                 glVertex2f(0, 0);
             }
             glEnd();
@@ -392,6 +395,11 @@ int PioneerBase::getNumLasers()
     return numLasers_;
 }
 
+float PioneerBase::getMaxSonarRange()
+{
+    return maxSonarRange_;
+}
+
 int PioneerBase::getNumSonars()
 {
     return numSonars_;
@@ -427,12 +435,77 @@ void PioneerBase::setLaserReadings(const std::vector<float> &l)
     lasers_ = l;
 }
 
+int PioneerBase::getNearestSonarBeam(float angle)
+{
+    if(angle>70.0)
+        return 0;
+    else if(angle>40 && angle<=70)
+        return 1;
+    else if(angle>20 && angle<=40)
+        return 2;
+    else if(angle>0 && angle<=20)
+        return 3;
+    else if(angle>-20 && angle<=0)
+        return 4;
+    else if(angle>-40 && angle<=-20)
+        return 5;
+    else if(angle>-70 && angle<=-40)
+        return 6;
+    else //if(angle<=-70.0)
+        return 7;
+
+}
+
+float sonarAngles_[8] = {90, 50, 30, 10, -10, -30, -50, -90};
+
+float PioneerBase::getAngleOfSonarBeam(int k)
+{
+    return sonarAngles_[k];
+}
+
+int PioneerBase::getNearestLaserBeam(float angle)
+{
+    // k = 0   -- angle  90
+    // k = 90  -- angle   0
+    // k = 180 -- angle -90
+
+    if(angle>90.0)
+        return 0;
+    else if(angle<-90.0)
+        return 180;
+    else{
+        return 90-(int)((angle > 0.0)?(angle + 0.5):(angle - 0.5));
+    }
+}
+
+float PioneerBase::getAngleOfLaserBeam(int k)
+{
+    // k = 0   -- angle  90
+    // k = 90  -- angle   0
+    // k = 180 -- angle -90
+
+    return 90.0-(float)k;
+}
+
+float PioneerBase::getKthSonarReading(int k)
+{
+    return sonars_[k];
+}
+
+float PioneerBase::getKthLaserReading(int k)
+{
+    return lasers_[k];
+}
+
+
 //////////////////////////////
 ///// NAVIGATION METHODS /////
 //////////////////////////////
 
 void PioneerBase::setMovementSimple(MovingDirection dir)
 {
+    double maxVel = 500;
+
     switch(dir){
         case FRONT:
             vLeft_ = 300;
@@ -463,6 +536,15 @@ void PioneerBase::setMovementSimple(MovingDirection dir)
             vRight_ = oldVRight_;
             break;
     }
+
+    if(vLeft_ > maxVel)
+        vLeft_ = maxVel;
+    else if(vLeft_ < -maxVel)
+        vLeft_ = -maxVel;
+    if(vRight_ > maxVel)
+        vRight_ = maxVel;
+    else if(vRight_ < -maxVel)
+        vRight_ = -maxVel;
 
     std::cout << "vLeft_:" << vLeft_ << " vRight_:" << vRight_ << std::endl;
 }

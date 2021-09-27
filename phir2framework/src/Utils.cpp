@@ -6,6 +6,24 @@
 #include <errno.h>
 #include <string.h>
 
+float normalizeAngleDEG(float a)
+{
+    while(a>180.0)
+        a -= 360.0;
+    while(a<=-180.0)
+        a += 360.0;
+    return a;
+}
+
+float normalizeAngleRAD(float a)
+{
+    while(a>M_PI)
+        a -= 2*M_PI;
+    while(a<=-M_PI)
+        a += 2*M_PI;
+    return a;
+}
+
 /////////////////////////////////
 ///// METHODS OF CLASS POSE /////
 /////////////////////////////////

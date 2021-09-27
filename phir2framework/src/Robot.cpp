@@ -1,5 +1,6 @@
 #include "Robot.h"
 
+#include <unistd.h>
 #include <GL/glut.h>
 #include <cmath>
 #include <iostream>
@@ -13,18 +14,25 @@ Robot::Robot()
 {
     ready_ = false;
     running_ = true;
+    
     PID_PreviousCTE_ = 0.0;
     PID_CTE_ = 0.0;
     PID_CTESum_ = 0.0;
 
     grid = new Grid();
 
+    plan = new Planning();
+    plan->setGrid(grid);
+    plan->setMaxUpdateRange(base.getMaxLaserRange());
+
     // variables used for navigation
-    motionMode_ = MANUAL_SIMPLE;
+    motionMode_=MANUAL_SIMPLE;
 
     // variables used for visualization
-    viewMode=1;
+    viewMode=0;
     numViewModes=5;
+
+
 }
 
 Robot::~Robot()
@@ -59,7 +67,7 @@ void Robot::initialize(ConnectionMode cmode, LogMode lmode, std::string fname)
 
 void Robot::run()
 {
-    controlTimer.waitTime(0.1);
+    controlTimer.waitTime(0.2);
 
     if(logMode_==PLAYBACK){
         bool hasEnded = base.readFromLog();
@@ -79,6 +87,17 @@ void Robot::run()
     }
 
     currentPose_ = base.getOdometry();
+
+    pthread_mutex_lock(grid->mutex);
+
+    // Mapping
+    mappingWithHIMMUsingLaser();
+    mappingWithLogOddsUsingLaser();
+    mappingUsingSonar();
+
+    pthread_mutex_unlock(grid->mutex);
+
+    plan->setNewRobotPose(currentPose_);
 
     // Save path traversed by the robot
     if(base.isMoving() || logMode_==PLAYBACK){
@@ -236,6 +255,272 @@ void Robot::keepAsFarthestAsPossibleFromWalls()
     base.setWheelsVelocity_fromLinAngVelocity(linVel, angVel);
 }
 
+///////////////////////////
+///// MAPPING METHODS /////
+///////////////////////////
+
+float Robot::getOccupancyFromLogOdds(float logodds)
+{
+    return 1.0 - 1.0/(1.0+exp(logodds));
+}
+
+float Robot::getLogOddsFromOccupancy(float occupancy)
+{
+    return log(occupancy/(1.0-occupancy));
+}
+
+void Robot::mappingWithLogOddsUsingLaser()
+{
+    float lambdaR = 0.1;  // 10 cm
+    float lambdaPhi = 1.0;  // 1 degree
+
+    int scale = grid->getMapScale();
+    float maxRange = base.getMaxLaserRange();
+    int maxRangeInt = maxRange*scale;
+
+    int robotX = currentPose_.x*scale;
+    int robotY = currentPose_.y*scale;
+    float robotAngle = currentPose_.theta;
+    int maxX, maxY, minX, minY = 0;
+
+    float locc, lfree;
+    float pocc, pfree;
+
+    // How to access a grid cell:
+    //    Cell* c=grid->getCell(robotX,robotY);
+
+    // Access log-odds value of variable in c->logodds
+    
+    // How to convert logodds to occupancy values:
+    //    c->occupancy = getOccupancyFromLogOdds(c->logodds);
+
+    // Defines fixed values of occupancy:
+    //    0.0 < pfree < 0.5 < pocc < 1.0
+    pfree = 0.3;
+    pocc = 0.8;
+        
+    // To log odds
+    locc = log( pocc / (1-pocc) );
+    lfree = log( pfree / (1-pfree) );
+
+    // Update cells in the sensors' field-of-view
+    // You only need to check the cells at most maxRangeInt from the robot position
+    // that is, in the following square region:
+    //
+    //  (robotX-maxRangeInt,robotY+maxRangeInt)  -------  (robotX+maxRangeInt,robotY+maxRangeInt)
+    //                     |                       \                         |
+    //                     |                        \                        |
+    //                     |                         \                       |
+    //  (robotX-maxRangeInt,robotY-maxRangeInt)  -------  (robotX+maxRangeInt,robotY-maxRangeInt)
+    minX = robotX - maxRangeInt;
+    minY = robotY - maxRangeInt;
+    maxX = robotX + maxRangeInt;
+    maxY = robotY + maxRangeInt;
+
+    for(int i = minX; i <= maxX; i++)
+    {
+        for(int j = minY; j <= maxY; j++)
+        {
+            float r, phi, k;
+
+            // Cell to be analyzed
+            Cell* c = grid->getCell(i,j);
+
+            // Computes the euclidean distance from the robot to the cell
+            r = sqrt( pow(i - robotX, 2) + pow(j - robotY, 2) );
+            r = r/scale;  // To meters
+
+            // Computes the phi-orientation from celll relative to the robot's local coordinates
+            phi = RAD2DEG(atan2(j - robotY, i - robotX)) - robotAngle;
+            phi = normalizeAngleDEG(phi);  // Normalizes the angle (between −180 and 180 degrees)
+
+            k = base.getNearestLaserBeam(phi);
+
+            // Updates cell occupation (occupied or free) depending on the sensor region where its located
+            if( (fabs(phi - base.getAngleOfLaserBeam(k)) > lambdaPhi/2 ) || (r > std::min(maxRange, (base.getKthLaserReading(k) + (lambdaR/2)))) )
+            {
+               c->logodds += 0;
+            }
+            else if( (base.getKthLaserReading(k) < maxRange) && (fabs(r - base.getKthLaserReading(k))< lambdaR/2) )
+            {
+               c->logodds += locc;
+            }
+            else if( r <= base.getKthLaserReading(k) )
+            {
+               c->logodds += lfree;
+            }
+
+            c->occupancy = getOccupancyFromLogOdds(c->logodds);
+        }
+    }
+
+}
+
+void Robot::mappingUsingSonar()
+{
+    float lambdaR = 0.5; //  50 cm
+    float lambdaPhi = 30.0;  // 30 degrees
+
+    int scale = grid->getMapScale();
+    float maxRange = base.getMaxSonarRange();
+    int maxRangeInt = maxRange*scale;
+
+    int robotX = currentPose_.x*scale;
+    int robotY = currentPose_.y*scale;
+    float robotAngle = currentPose_.theta;
+    int maxX, maxY, minX, minY = 0;
+
+    float occUpdate, occ;
+    float R = maxRange;
+
+    minX = robotX - maxRangeInt;
+    minY = robotY - maxRangeInt;
+    maxX = robotX + maxRangeInt;
+    maxY = robotY + maxRangeInt;
+
+    for(int i = minX; i <= maxX; i++)
+    {
+        for(int j = minY; j <= maxY; j++)
+        {
+            float r, phi, k = 0, factor = 0;
+
+            // Cell to be analyzed
+            Cell* c = grid->getCell(i,j);
+
+            occ = c->occupancySonar;
+
+            // Computes the euclidean distance from the robot to the cell
+            r = sqrt( pow(i - robotX, 2) + pow(j - robotY, 2) );
+            r = r/scale;  // To meters
+
+            // Computes the phi-orientation from celll relative to the robot's local coordinates
+            phi = RAD2DEG(atan2(j - robotY, i - robotX)) - robotAngle;
+            phi = normalizeAngleDEG(phi);  // Normalizes the angle (between −180 and 180 degrees)
+
+            k = base.getNearestSonarBeam(phi);
+
+            // Updates cell occupation (occupied or free) depending on the sensor region where its located
+            // Region III
+            if( (fabs(phi - base.getAngleOfSonarBeam(k)) > lambdaPhi/2) || (r > std::min(maxRange, (base.getKthSonarReading(k)+(lambdaR/2)))) )
+            {
+                occ += 0.0;
+            }
+            // Region I
+            else if( (base.getKthSonarReading(k) < maxRange) && (fabs(r - base.getKthSonarReading(k)) < (lambdaR / 2)) )
+            {  
+                factor = (((R - r) / R) + ((lambdaPhi - lambdaR) / lambdaPhi)) / 2;
+                occUpdate = 0.5 * factor + 0.5;
+                occ = (occUpdate * occ) / ((occUpdate * occ) + ((1.0 - occUpdate) * (1.0 - occ)));
+            }
+            // Region II
+            else if(r <= base.getKthSonarReading(k))
+            {
+                factor = (((R - r) / R) + ((lambdaPhi - lambdaR) / lambdaPhi)) / 2;
+                occUpdate = 0.5 * (1.0 - factor);
+                occ = (occUpdate * occ) / ( (occUpdate * occ) + ((1.0 - occUpdate) * (1.0 - occ)) );
+            }
+
+            // Prevents that Occ becomes 0 or 1:
+            if(occ == 1)
+            {
+                occ = 0.99;
+            }
+            else if(occ == 0)
+            {
+                occ = 0.01;
+            }
+
+            c->occupancySonar = occ;
+        }
+    }
+
+
+
+}
+
+void Robot::mappingWithHIMMUsingLaser()
+{
+    float lambdaR = 0.2;  // 20 cm
+    float lambdaPhi = 1.0;  // 1 degree
+
+    int scale = grid->getMapScale();
+    float maxRange = base.getMaxLaserRange();
+    int maxRangeInt = maxRange*scale;
+
+    int robotX = currentPose_.x*scale;
+    int robotY = currentPose_.y*scale;
+    float robotAngle = currentPose_.theta;
+    int maxX, maxY, minX, minY = 0;
+
+    // Update cells in the sensors' field-of-view
+    // You only need to check the cells at most maxRangeInt from the robot position
+    // that is, in the following square region:
+    //
+    //  (robotX-maxRangeInt,robotY+maxRangeInt)  -------  (robotX+maxRangeInt,robotY+maxRangeInt)
+    //                     |                       \                         |
+    //                     |                        \                        |
+    //                     |                         \                       |
+    //  (robotX-maxRangeInt,robotY-maxRangeInt)  -------  (robotX+maxRangeInt,robotY-maxRangeInt)
+    minX = robotX - maxRangeInt;
+    minY = robotY - maxRangeInt;
+    maxX = robotX + maxRangeInt;
+    maxY = robotY + maxRangeInt;
+
+    for(int i = minX; i <= maxX; i++)
+    {
+        for(int j = minY; j <= maxY; j++)
+        {
+            float r, phi, k = 0, factor = 0;
+            
+            // Cell to be analyzed
+            Cell* c = grid->getCell(i,j);
+            
+            // Computes the euclidean distance from the robot to the cell
+            r = sqrt( pow(i - robotX, 2) + pow(j - robotY, 2) );
+            r = r/scale;  // To meters
+
+            // Computes the phi-orientation from celll relative to the robot's local coordinates
+            phi = RAD2DEG(atan2(j - robotY, i - robotX)) - robotAngle;
+            phi = normalizeAngleDEG(phi);  // Normalizes the angle (between −180 and 180 degrees)
+
+            k = base.getNearestLaserBeam(phi);
+
+            // Updates cell occupation (occupied or free) depending on the sensor region where its located
+            if( (r > std::min(maxRange, base.getKthLaserReading(k))) || (fabs(phi - base.getAngleOfLaserBeam(k)) > lambdaPhi / 2) )
+            {
+                c->himm += 0;
+            }
+            else if( (base.getKthLaserReading(k) < maxRange) && (fabs(r - base.getKthLaserReading(k)) < (lambdaR / 2)) )
+            {
+                // When the cell is on an obstacle region from the sensor, increment the counter by 3
+                // Limits the counter to be 15 at maximum
+                if(c->himm == 15)
+                {
+                    c->himm += 0;
+                }
+                else
+                {
+                    c->himm += 3;
+                }
+            }
+            else if( r <= base.getKthLaserReading(k) )
+            {
+                // When the cell is NOT on an obstacle region, decrement counter by 1
+                // Limits the counter to be 0 at minimum
+                if(c->himm == 0)
+                {
+                    c->himm += 0;
+                }
+                else
+                {
+                    c->himm -= 1;
+                }
+            }
+        }
+    }
+
+}
+
 /////////////////////////////////////////////////////
 ////// METHODS FOR READING & WRITING ON LOGFILE /////
 /////////////////////////////////////////////////////
@@ -272,7 +557,6 @@ void Robot::draw(float xRobot, float yRobot, float angRobot)
     float scale = grid->getMapScale();
     glTranslatef(xRobot,yRobot,0.0);
     glRotatef(angRobot,0.0,0.0,1.0);
-
     glScalef(1.0/scale,1.0/scale,1.0/scale);
 
     // sonars and lasers draw in cm
@@ -291,6 +575,25 @@ void Robot::draw(float xRobot, float yRobot, float angRobot)
     glScalef(scale,scale,scale);
     glRotatef(-angRobot,0.0,0.0,1.0);
     glTranslatef(-xRobot,-yRobot,0.0);
+}
+
+/////////////////////////
+///// OTHER METHODS /////
+/////////////////////////
+
+bool Robot::isReady()
+{
+    return ready_;
+}
+
+bool Robot::isRunning()
+{
+    return running_;
+}
+
+const Pose& Robot::getCurrentPose()
+{
+    return currentPose_;
 }
 
 void Robot::drawPath()
@@ -316,22 +619,11 @@ void Robot::drawPath()
     }
 }
 
-/////////////////////////
-///// OTHER METHODS /////
-/////////////////////////
-
-bool Robot::isReady()
-{
-    return ready_;
+void Robot::waitTime(float t){
+    float l;
+    do{
+        usleep(1000);
+        l = controlTimer.getLapTime();
+    }while(l < t);
+    controlTimer.startLap();
 }
-
-bool Robot::isRunning()
-{
-    return running_;
-}
-
-const Pose& Robot::getCurrentPose()
-{
-    return currentPose_;
-}
-

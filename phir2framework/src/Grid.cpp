@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <float.h> // DBL_MAX
 
 #include "Grid.h"
 #include "math.h"
@@ -24,14 +25,25 @@ Grid::Grid ()
             cells_[c].x = -halfNumCellsInRow_ + 1 + i;
             cells_[c].y =  halfNumCellsInRow_ - j;
 
-            cells_[c].val=1.0;
+            cells_[c].occupancy = 0.5;
+            cells_[c].logodds = 0;
+            cells_[c].occupancySonar = 0.5;
+            cells_[c].logoddsSonar = 0;
+            cells_[c].himm = 7;
+
+            cells_[c].occType = UNEXPLORED;
+            cells_[c].planType = REGULAR;
+
+            cells_[c].dirX=0.0;
+            cells_[c].dirY=0.0;
         }
     }
 
-    numViewModes=1;
+    numViewModes=4;
     viewMode=0;
 
     showValues=false;
+    showArrows=false;
 }
 
 Cell* Grid::getCell (int x, int y)
@@ -66,6 +78,15 @@ void Grid::draw(int xi, int yi, int xf, int yf)
         }
     }
 
+    if(showArrows){
+        glPointSize(2);
+        for(int i=xi; i<=xf; ++i){
+            for(int j=yi; j<=yf; ++j){
+                drawVector(i+j*numCellsInRow_);
+            }
+        }
+    }
+
     if(showValues){
         for(int i=xi; i<=xf; i++){
             for(int j=yi; j<=yf; j++){
@@ -79,8 +100,36 @@ void Grid::drawCell(unsigned int n)
 {
     float aux;
 
-    aux=cells_[n].val;
-    glColor3f(aux,aux,aux);
+    if(viewMode==0){
+        // DRAW OCCUPANCY GRID MAP
+        aux=(1.0-cells_[n].occupancy);
+        glColor3f(aux,aux,aux);
+    }else if(viewMode==1){
+        // DRAW SONAR OCCUPANCY GRID MAP
+        aux=(1.0-cells_[n].occupancySonar);
+        glColor3f(aux,aux,aux);
+    }else if(viewMode==2){
+        // DRAW HIMM GRID MAP
+        aux=(16.0-cells_[n].himm)/16.0;
+        glColor3f(aux,aux,aux);
+    }else if(viewMode==3){
+        // DRAW CLASSIFIED CELLS (FROM PLANNING)
+        if(cells_[n].occType == FREE){
+            if(cells_[n].planType == DANGER){
+                glColor3f(1.0,0.0,0.0);
+            }else{
+                glColor3f(1.0,1.0,0.7);
+            }
+        }else if(cells_[n].occType == UNEXPLORED){
+            if(cells_[n].planType == FRONTIER){
+                glColor3f(0.0,0.8,0.3);
+            }else{
+                glColor3f(0.6,0.6,0.6);
+            }
+        }else if(cells_[n].occType == OCCUPIED){
+            glColor3f(0.3,0.0,0.0);
+        }
+    }
 
     glBegin( GL_QUADS );
     {
@@ -92,12 +141,36 @@ void Grid::drawCell(unsigned int n)
     glEnd();
 }
 
+void Grid::drawVector(unsigned int n)
+{
+    if(cells_[n].occType == FREE){
+        if(cells_[n].dirX == 0.0 && cells_[n].dirY == 0.0)
+            glColor3f(1.0,0.7,0.0);
+        else
+            glColor3f(1.0,0.0,0.0);
+        glLineWidth(1);
+        glBegin( GL_LINES );
+        {
+            glVertex2f(cells_[n].x+0.5, cells_[n].y+0.5);
+            glVertex2f(cells_[n].x+0.5+cells_[n].dirX, cells_[n].y+0.5+cells_[n].dirY);
+        }
+        glEnd();
+        glBegin( GL_POINTS );
+        {
+            glVertex2f(cells_[n].x+0.5+cells_[n].dirX, cells_[n].y+0.5+cells_[n].dirY);
+        }
+        glEnd();
+    }
+}
+
 void Grid::drawText(unsigned int n)
 {
     glRasterPos2f(cells_[n].x+0.25, cells_[n].y+0.25);
     std::stringstream s;
     glColor3f(0.5f, 0.0f, 0.0f);
-    s << cells_[n].val;
+//    s << std::setprecision(1) << std::fixed << cells_[n].pot;
+    s << cells_[n].himm;
+
 
     std::string text=s.str();
     for (unsigned int i=0; i<text.size(); i++)
