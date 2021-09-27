@@ -353,7 +353,6 @@ void Robot::mappingWithLogOddsUsingLaser()
             c->occupancy = getOccupancyFromLogOdds(c->logodds);
         }
     }
-
 }
 
 void Robot::mappingUsingSonar()
@@ -433,9 +432,6 @@ void Robot::mappingUsingSonar()
             c->occupancySonar = occ;
         }
     }
-
-
-
 }
 
 void Robot::mappingWithHIMMUsingLaser()
@@ -518,7 +514,6 @@ void Robot::mappingWithHIMMUsingLaser()
             }
         }
     }
-
 }
 
 /////////////////////////////////////////////////////

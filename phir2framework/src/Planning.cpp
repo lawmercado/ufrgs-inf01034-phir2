@@ -78,7 +78,14 @@ void Planning::resetCellsTypes()
 
 void Planning::updateCellsTypes()
 {
-    Cell* c;
+    int maxRangeInt = maxUpdateRange;
+
+    int robotX = robotPosition.x;
+    int robotY = robotPosition.y;
+    int maxX, maxY, minX, minY = 0;
+
+    int DANGER_WIDTH = 3;
+    int FRONTIER_WIDTH = 1;
 
     // If you want to access the current cells surrounding the robot, use this range
     //
@@ -87,31 +94,77 @@ void Planning::updateCellsTypes()
     //                                 |                                     \                                    |
     //                                 |                                      \                                   |
     //  (robotPosition.x-maxUpdateRange, robotPosition.y-maxUpdateRange)  -------  (robotPosition.y+maxUpdateRange, robotPosition.y-maxUpdateRange)
+    minX = robotX - maxRangeInt;
+    minY = robotY - maxRangeInt;
+    maxX = robotX + maxRangeInt;
+    maxY = robotY + maxRangeInt;
 
+    for(int i = minX; i <= maxX; i++)
+    {
+        for(int j = minY; j <= maxY; j++)
+        {
+            // Cell to be analyzed
+            Cell* c = grid->getCell(i,j);
+            
+            if(c->occType == UNEXPLORED)
+            {
+                if(c->occupancy > 0.6)
+                {
+                    c->occType = OCCUPIED;
+                }
+                else if(c->occupancy <= 0.3)
+                {
+                    c->occType = FREE;
+                }
+            }
+            else
+            {
+                if(c->occupancy > 0.6)
+                {
+                    c->occType = OCCUPIED;
+                }
+                else if(c->occupancy <= 0.3)
+                {
+                    c->occType = FREE;
+                }
+            }
 
-    // If you want to access all observed cells (since the start), use this range
-    //
-    //  (gridLimits.minX, gridLimits.maxY)  -------  (gridLimits.maxX, gridLimits.maxY)
-    //                  |                     \                      |
-    //                  |                      \                     |
-    //                  |                       \                    |
-    //  (gridLimits.minX, gridLimits.minY)  -------  (gridLimits.maxX, gridLimits.minY)
+            // Classifies based on the planning type
+            
+            // Frontier cells
+            if( c->occType == FREE )
+            {
+                for(int x = i - FRONTIER_WIDTH; x <= i + FRONTIER_WIDTH; x++)
+                {
+                    for(int y = j - FRONTIER_WIDTH; y <= j + FRONTIER_WIDTH; y++)
+                    {
+                        Cell* n = grid->getCell(x, y);
 
-    // TODO: classify cells
+                        if( n->occType == UNEXPLORED )
+                        {
+                            n->planType = FRONTIER;
+                        }
+                    }
+                }
+            }
 
-    // the occupancy type of a cell can be defined as:
-    // c->occType = UNEXPLORED
-    // c->occType = OCCUPIED
-    // c->occType = FREE
+            // Danger cells
+            if( c->occType == OCCUPIED )
+            {
+                for(int x = i - DANGER_WIDTH; x <= i + DANGER_WIDTH; x++)
+                {
+                    for(int y = j - DANGER_WIDTH; y <= j + DANGER_WIDTH; y++)
+                    {
+                        Cell* n = grid->getCell(x, y);
 
-    // the planning type of a cell can be defined as:
-    // c->planType = REGULAR
-    // c->planType = FRONTIER
-    // c->planType = DANGER
-
-
-
-
-
+                        if( n->occType == FREE )
+                        {
+                            n->planType = DANGER;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
